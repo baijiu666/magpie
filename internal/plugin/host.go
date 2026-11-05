@@ -924,8 +924,23 @@ func (h *host) stop() {
 		}
 	}
 	if h.cmd.Process != nil {
-		h.cmd.Process.Kill()
+		endHost(h.cmd)
 	}
+}
+
+// endHost ends a plugin host and what that host started.
+//
+// TerminateProcess ends the host alone: a plugin that started a browser or
+// a daemon of its own (a headless Chromium for a WAF behind a fetch hook)
+// leaves it running with no parent, holding its temp profile open. A
+// plugin doing that on every failed refresh left 620 msedge processes and
+// 57GB of %TEMP% on one machine in a single hour (MYCF711/magpie-magicrew-auth
+// #39). proc.End lists the descendants while the host is still alive and
+// ends them with it; Process.Kill stays as the backstop, so the host is
+// ended even where proc.End only signals.
+func endHost(cmd *exec.Cmd) {
+	_ = proc.End(cmd.Process.Pid)
+	_ = cmd.Process.Kill()
 }
 
 // hostFile is host.js written where Bun can run it.
@@ -1266,7 +1281,7 @@ func (h *host) read(out io.Reader) {
 			// a child that never ends a line: stop it rather than allocate
 			h.fail(fmt.Errorf("the plugin host sent a line longer than %d bytes", h.lineLimit()))
 			if h.cmd.Process != nil {
-				_ = h.cmd.Process.Kill()
+				endHost(h.cmd)
 			}
 			break
 		}
